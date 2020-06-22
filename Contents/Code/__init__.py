@@ -133,6 +133,7 @@ def Search(results, media, lang, manual, movie):
   YOUTUBE_API_KEY   = Prefs['YouTube-Agent_youtube_api_key']
   displayname = os.path.basename(media.items[0].parts[0].file) if movie else media.show
   filename = os.path.basename(media.items[0].parts[0].file) if movie else os.path.splitext(os.path.basename(media.filename))[0]
+  filename = urllib2.unquote(filename)
   dir      = GetMediaDir(media, movie)
   Log(''.ljust(157, '='))
   Log('search() - dir: {}, filename: {}'.format(dir, filename))
@@ -220,7 +221,7 @@ def Update(metadata, media, lang, force, movie):
         metadata.title                   = video_details['snippet']['title'];                                           Log('series title:       "{}"'.format(video_details['snippet']['title']))
         metadata.summary                 = video_details['snippet']['description'];                                     Log('series description: '+video_details['snippet']['description'].replace('\n', '. '))
         thumb                            = video_details['snippet']['thumbnails']['default']['url'];                    Log('thumb: "{}"'.format(thumb))
-        poster                           = video_details['snippet']['thumbnails']['standard']['url'];                   Log('poster: "{}"'.format(thumb))
+        poster                           = Dict(video_details, 'snippet', 'thumbnails', 'default', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'high', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'standard', 'url');  Log('poster: "{}"'.format(thumb))
         metadata.posters[thumb]          = Proxy.Media(HTTP.Request(poster).content, sort_order=1)
         metadata.duration                = ISO8601DurationToSeconds(video_details['contentDetails']['duration'])*1000;  Log('series duration:    "{}"->"{}"'.format(video_details['contentDetails']['duration'], metadata.duration))
         if Dict(video_details, 'statistics', 'likeCount') and int(video_details['statistics']['likeCount']) > 0:
@@ -501,17 +502,24 @@ def Update(metadata, media, lang, force, movie):
                     thumb                           = local_details["thumbnails"][0]["url"] 
                     Log.Info('trying to download thumbnail: {}'.format(thumb))
                     picture                         = HTTP.Request(thumb).content
-                  except Exception as e:  Log('Error: "{}"'.format(e))
+                  except Exception as e:  Log('Error load thumbnail internet: "{}"'.format(e))
                 episode.title                   = filterInvalidXMLChars(local_details["fulltitle"]);                                 Log.Info('[ ] title:    "{}"'.format(local_details["fulltitle"]))
                 episode.summary                 = filterInvalidXMLChars(local_details["description"]);                           Log.Info('[ ] summary:  "{}"'.format(local_details["description"].replace('\n', '. ')))
-                thedate=datetime.strptime(local_details["upload_date"],'%Y%m%d')
+                #Placeholder date for invalid upload_date (sometimes youtube returns null
+                thedate=datetime.strptime("19000101",'%Y%m%d')
+                try:
+                  thedate=datetime.strptime(local_details["upload_date"],'%Y%m%d')
+                except Exception as e:  Log('Error upload_date parse: "{}"'.format(e))
                 episode.originally_available_at = thedate;                       Log.Info('[ ] date:     "{}"'.format(thedate))
-                # This looks like ( (10*likes) / dislikes) + likes -- which doesn't make sense to me, so I must be missing something
-                #if Dict(video_details, 'statistics', 'likeCount') and int(video_details['statistics']['likeCount']) > 0:
-                #  episode.rating                = float(10*int(video_details['statistics']['likeCount'])/(int(video_details['statistics']['dislikeCount'])+int(video_details['statistics']['likeCount'])));  Log('[ ] rating:   "{}"'.format(episode.rating))
-                # in the interim I'm replacing it with (likes / (likes+dislikes) ) * 10
-                if ((local_details["like_count"] is not None) and (local_details["dislike_count"] is not None) and int(local_details["like_count"])>0):
-                  episode.rating = (float(local_details["like_count"])/(float(local_details["like_count"])+float(local_details["dislike_count"])))*10.0;  Log('[ ] rating:   "{}"'.format(episode.rating))
+                if (local_details["average_rating"] is not None):
+                  episode.rating = (float(local_details["average_rating"])/5.0)*10.0;  Log('[ ] average rating:   "{}"'.format(episode.rating))
+                else:
+                  # This looks like ( (10*likes) / dislikes) + likes -- which doesn't make sense to me, so I must be missing something
+                  #if Dict(video_details, 'statistics', 'likeCount') and int(video_details['statistics']['likeCount']) > 0:
+                  #  episode.rating                = float(10*int(video_details['statistics']['likeCount'])/(int(video_details['statistics']['dislikeCount'])+int(video_details['statistics']['likeCount'])));  Log('[ ] rating:   "{}"'.format(episode.rating))
+                  # in the interim I'm replacing it with (likes / (likes+dislikes) ) * 10
+                  if ((local_details["like_count"] is not None) and (local_details["dislike_count"] is not None) and (int(local_details["like_count"])>0)):
+                    episode.rating = (float(local_details["like_count"])/(float(local_details["like_count"])+float(local_details["dislike_count"])))*10.0;  Log('[ ] rating:   "{}"'.format(episode.rating))
                 episode.thumbs[thumb]           = Proxy.Media(picture, sort_order=1);                                  Log.Info('[ ] thumbs:   "{}"'.format(thumb))
                 episode.thumbs.validate_keys([thumb])
                 episode.duration                = local_details["duration"];               Log.Info('[ ] duration: "{}"->"{}"'.format(local_details["duration"], episode.duration))
@@ -534,38 +542,38 @@ def Update(metadata, media, lang, force, movie):
 
             else:
               Log.Info('No local metadata here')
-##              #no local metadata
-##              try:
-##
-##                
-##                Log.Info('filename: {} does exist: {}'.format(checklocaljson,os.path.isfile(checklocaljson)))
-##                url = '{}&id={}&key={}'.format(YOUTUBE_VIDEO_DETAILS, videoId, YOUTUBE_API_KEY)
-##                video_details = json_load(url)['items'][0]
-##
-##              except Exception as e:  Log('Error: "{}"'.format(e))
-##              else:
-##                #Log.Info('[?] link:     "https://www.youtube.com/watch?v={}"'.format(videoId))
-##                thumb                           = Dict(video_details, 'snippet', 'thumbnails', 'standard', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'high', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'medium', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'default', 'url')
-##                picture                         = HTTP.Request(thumb).content
-##                episode.title                   = filterInvalidXMLChars(video_details['snippet']['title']);                                 Log.Info('[ ] title:    "{}"'.format(video_details['snippet']['title']))
-##                episode.summary                 = filterInvalidXMLChars(video_details['snippet']['description']);                           Log.Info('[ ] summary:  "{}"'.format(video_details['snippet']['description'].replace('\n', '. ')))
-##                episode.originally_available_at = Datetime.ParseDate(video_details['snippet']['publishedAt']).date();                       Log.Info('[ ] date:     "{}"'.format(video_details['snippet']['publishedAt']))
-##                if Dict(video_details, 'statistics', 'likeCount') and int(video_details['statistics']['likeCount']) > 0:
-##                  episode.rating                = float(10*int(video_details['statistics']['likeCount'])/(int(video_details['statistics']['dislikeCount'])+int(video_details['statistics']['likeCount'])));  Log('[ ] rating:   "{}"'.format(episode.rating))
-##                episode.thumbs[thumb]           = Proxy.Media(picture, sort_order=1);                                  Log.Info('[ ] thumbs:   "{}"'.format(thumb))
-##                episode.thumbs.validate_keys([thumb])
-##                episode.duration                = ISO8601DurationToSeconds(video_details['contentDetails']['duration'])*1000;               Log.Info('[ ] duration: "{}"->"{}"'.format(video_details['contentDetails']['duration'], metadata.duration))
-##                #videoId = Dict(video, 'contentDetails', 'videoId')
-##                if Dict(video_details, 'snippet',  'channelTitle') and Dict(video_details, 'snippet',  'channelTitle') not in [role_obj.name for role_obj in episode.directors]:
-##                  meta_director       = episode.directors.new()
-##                  meta_director.name  = filterInvalidXMLChars(Dict(video_details, 'snippet',  'channelTitle'))
-##                Log.Info('[ ] director: "{}"'.format(Dict(video_details, 'snippet',  'channelTitle')))
-##                for id  in Dict(video_details, 'snippet', 'categoryId').split(',') or []:  genre_array[YOUTUBE_CATEGORY_ID[id]] = genre_array[YOUTUBE_CATEGORY_ID[id]]+1 if YOUTUBE_CATEGORY_ID[id] in genre_array else 1
-##                for tag in Dict(video_details, 'snippet', 'tags')                  or []:  genre_array[tag                    ] = genre_array[tag                    ]+1 if tag                     in genre_array else 1
-##                if first:
-##                  first = False
-##                  metadata.posters[thumb] = Proxy.Media(picture, sort_order=1)
-##                  Log.Info('[ ] posters: {}'.format(thumb))
+              #no local metadata
+              try:
+
+                
+                Log.Info('filename: {} does exist: {}'.format(checklocaljson,os.path.isfile(checklocaljson)))
+                url = '{}&id={}&key={}'.format(YOUTUBE_VIDEO_DETAILS, videoId, YOUTUBE_API_KEY)
+                video_details = json_load(url)['items'][0]
+
+              except Exception as e:  Log('Error: "{}"'.format(e))
+              else:
+                #Log.Info('[?] link:     "https://www.youtube.com/watch?v={}"'.format(videoId))
+                thumb                           = Dict(video_details, 'snippet', 'thumbnails', 'standard', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'high', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'medium', 'url') or Dict(video_details, 'snippet', 'thumbnails', 'default', 'url')
+                picture                         = HTTP.Request(thumb).content
+                episode.title                   = filterInvalidXMLChars(video_details['snippet']['title']);                                 Log.Info('[ ] title:    "{}"'.format(video_details['snippet']['title']))
+                episode.summary                 = filterInvalidXMLChars(video_details['snippet']['description']);                           Log.Info('[ ] summary:  "{}"'.format(video_details['snippet']['description'].replace('\n', '. ')))
+                episode.originally_available_at = Datetime.ParseDate(video_details['snippet']['publishedAt']).date();                       Log.Info('[ ] date:     "{}"'.format(video_details['snippet']['publishedAt']))
+                if Dict(video_details, 'statistics', 'likeCount') and int(video_details['statistics']['likeCount']) > 0:
+                  episode.rating                = float(10*int(video_details['statistics']['likeCount'])/(int(video_details['statistics']['dislikeCount'])+int(video_details['statistics']['likeCount'])));  Log('[ ] rating:   "{}"'.format(episode.rating))
+                episode.thumbs[thumb]           = Proxy.Media(picture, sort_order=1);                                  Log.Info('[ ] thumbs:   "{}"'.format(thumb))
+                episode.thumbs.validate_keys([thumb])
+                episode.duration                = ISO8601DurationToSeconds(video_details['contentDetails']['duration'])*1000;               Log.Info('[ ] duration: "{}"->"{}"'.format(video_details['contentDetails']['duration'], metadata.duration))
+                #videoId = Dict(video, 'contentDetails', 'videoId')
+                if Dict(video_details, 'snippet',  'channelTitle') and Dict(video_details, 'snippet',  'channelTitle') not in [role_obj.name for role_obj in episode.directors]:
+                  meta_director       = episode.directors.new()
+                  meta_director.name  = filterInvalidXMLChars(Dict(video_details, 'snippet',  'channelTitle'))
+                Log.Info('[ ] director: "{}"'.format(Dict(video_details, 'snippet',  'channelTitle')))
+                for id  in Dict(video_details, 'snippet', 'categoryId').split(',') or []:  genre_array[YOUTUBE_CATEGORY_ID[id]] = genre_array[YOUTUBE_CATEGORY_ID[id]]+1 if YOUTUBE_CATEGORY_ID[id] in genre_array else 1
+                for tag in Dict(video_details, 'snippet', 'tags')                  or []:  genre_array[tag                    ] = genre_array[tag                    ]+1 if tag                     in genre_array else 1
+                if first:
+                  first = False
+                  metadata.posters[thumb] = Proxy.Media(picture, sort_order=1)
+                  # Log.Info('[ ] posters: {}'.format(thumb)) causes error since thumb is a Dict
 
             Log.Info('[ ] genres:   "{}"'.format([x for x in metadata.genres]))  #metadata.genres.clear()
             genre_array_cleansed = [id for id in genre_array if genre_array[id]>episodes/2 and id not in metadata.genres]  #Log.Info('[ ] genre_list: {}'.format(genre_list))
